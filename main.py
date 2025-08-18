@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
 from scipy.sparse import csr_matrix
-from sklearn.metrics.pairwise import cosine_similarity
+import random
 
 # Load the dataset
 @st.cache_data
@@ -16,129 +16,157 @@ df_with_cnt = load_data()
 # Create the pivot table for the recommendation system
 @st.cache_data
 def create_pivot_table(df):
-    # FIX 1: Gunakan aggregation function yang tepat untuk menghindari duplikasi
     book_pivot = df.pivot_table(
         columns='User-ID', 
         index='Book-Title', 
         values='Book-Rating', 
-        aggfunc='mean'  # Menggunakan rata-rata untuk menghindari duplikasi
+        aggfunc='mean'
     )
     book_pivot.fillna(0, inplace=True)
     
-    # FIX 2: Filter buku dengan minimal interaksi untuk mengurangi noise
-    # Hanya ambil buku yang memiliki minimal 5 rating
+    # Filter buku dengan minimal interaksi
     book_counts = (book_pivot > 0).sum(axis=1)
-    popular_books = book_counts[book_counts >= 5].index
+    popular_books = book_counts[book_counts >= 3].index  # Lebih rendah untuk lebih banyak pilihan
     book_pivot_filtered = book_pivot.loc[popular_books]
     
     return book_pivot_filtered
 
 book_pivot = create_pivot_table(df_with_cnt)
-
-# Convert the pivot table to a sparse matrix
 book_sparse = csr_matrix(book_pivot.values)
 
-# FIX 3: Gunakan algoritma yang lebih cocok dan parameter yang tepat
 @st.cache_resource
 def train_model():
     model = NearestNeighbors(
-        n_neighbors=20,  # Mencari lebih banyak neighbors
-        algorithm='brute',  # Lebih akurat untuk dataset kecil-menengah
-        metric='cosine'  # Cosine similarity lebih cocok untuk collaborative filtering
+        n_neighbors=30,  # Lebih banyak neighbors untuk diversitas
+        algorithm='brute',
+        metric='cosine'
     )
     model.fit(book_sparse)
     return model
 
 model = train_model()
 
-# Function to fetch poster URLs for recommendations
 def fetch_poster(suggestion):
     poster_url = []
     for book_id in suggestion:
         try:
-            # Retrieve the URL for the recommended book
             book_name = book_pivot.index[book_id]
             url_series = df_with_cnt[df_with_cnt['Book-Title'] == book_name]['Image-URL-L']
             if not url_series.empty:
                 url = url_series.iloc[0]
                 poster_url.append(url)
             else:
-                # Default image jika tidak ada
                 poster_url.append("https://via.placeholder.com/150x200?text=No+Image")
-        except Exception as e:
+        except:
             poster_url.append("https://via.placeholder.com/150x200?text=Error")
     return poster_url
 
-# FIX 4: Improve recommendation function dengan diversity dan filtering
-def recommend_book(book_name, diversity_factor=0.3):
+# FIXED: Improved recommendation function dengan randomization dan better diversity
+def recommend_book(book_name):
     try:
-        # Find the index of the given book
         book_indices = np.where(book_pivot.index == book_name)[0]
         if len(book_indices) == 0:
             return [], []
         
         book_id = book_indices[0]
         
-        # Get more neighbors to increase diversity
+        # Dapatkan lebih banyak neighbors
         distance, suggestion = model.kneighbors(
             book_pivot.iloc[book_id, :].values.reshape(1, -1), 
-            n_neighbors=min(15, len(book_pivot))  # Ambil lebih banyak kandidat
+            n_neighbors=min(25, len(book_pivot))
         )
         
-        # FIX 5: Tambahkan diversity dalam rekomendasi
-        recommended_indices = suggestion[0][1:]  # Exclude the book itself
+        # Exclude buku itu sendiri
+        recommended_indices = suggestion[0][1:]
         distances = distance[0][1:]
         
-        # Sort berdasarkan distance (similarity)
-        sorted_pairs = sorted(zip(recommended_indices, distances), key=lambda x: x[1])
+        # FIXED: Tambahkan randomization dengan weighted sampling
+        # Buat weight berdasarkan similarity (semakin mirip, weight semakin tinggi)
+        # Tapi tambahkan noise untuk randomization
+        weights = 1 / (distances + 1e-8)  # Avoid division by zero
         
-        # Implementasi diversity: pilih buku dengan kombinasi similarity dan keunikan
+        # Normalisasi weights dan tambahkan random noise
+        weights = weights / weights.sum()
+        noise = np.random.random(len(weights)) * 0.3  # 30% randomization
+        weights = weights + noise
+        weights = weights / weights.sum()
+        
+        # FIXED: Sampling dengan replacement=False untuk menghindari duplikasi
+        try:
+            # Pilih 10 kandidat secara random berdasarkan weight
+            candidate_count = min(10, len(recommended_indices))
+            selected_candidates = np.random.choice(
+                recommended_indices, 
+                size=candidate_count, 
+                replace=False, 
+                p=weights[:len(recommended_indices)]
+            )
+        except:
+            # Fallback jika sampling gagal
+            selected_candidates = recommended_indices[:10]
+        
+        # FIXED: Implementasi diversity berdasarkan author dan genre
         final_recommendations = []
         used_authors = set()
         
-        # Coba dapatkan informasi author jika ada
-        input_book_info = df_with_cnt[df_with_cnt['Book-Title'] == book_name]
-        input_author = input_book_info['Book-Author'].iloc[0] if not input_book_info.empty and 'Book-Author' in input_book_info.columns else None
+        # Shuffle kandidat untuk randomization
+        candidate_list = list(selected_candidates)
+        random.shuffle(candidate_list)
         
-        for idx, dist in sorted_pairs:
+        # Dapatkan info buku input
+        input_book_info = df_with_cnt[df_with_cnt['Book-Title'] == book_name]
+        input_author = None
+        if not input_book_info.empty and 'Book-Author' in input_book_info.columns:
+            input_author = input_book_info['Book-Author'].iloc[0]
+        
+        for idx in candidate_list:
             if len(final_recommendations) >= 5:
                 break
                 
             book_title = book_pivot.index[idx]
-            book_info = df_with_cnt[df_with_cnt['Book-Title'] == book_title]
             
-            # Skip jika sama dengan buku input
+            # Skip jika sama dengan input
             if book_title == book_name:
                 continue
-                
-            # Tambahkan diversity berdasarkan author (jika data tersedia)
+            
+            # Cek diversity berdasarkan author
+            book_info = df_with_cnt[df_with_cnt['Book-Title'] == book_title]
+            add_book = True
+            
             if not book_info.empty and 'Book-Author' in book_info.columns:
                 author = book_info['Book-Author'].iloc[0]
                 
-                # Jika sudah ada 2 buku dari author yang sama, skip
-                if len(final_recommendations) >= 2 and author in used_authors:
-                    continue
-                    
-                # Jika author sama dengan input book dan sudah ada 1 rekomendasi, pertimbangkan diversity
-                if author == input_author and len([r for r in final_recommendations]) >= 1:
-                    if np.random.random() > diversity_factor:
-                        continue
+                # Batasi maksimal 2 buku dari author yang sama
+                author_count = sum(1 for rec_idx in final_recommendations 
+                                 if not df_with_cnt[df_with_cnt['Book-Title'] == book_pivot.index[rec_idx]].empty
+                                 and 'Book-Author' in df_with_cnt.columns
+                                 and df_with_cnt[df_with_cnt['Book-Title'] == book_pivot.index[rec_idx]]['Book-Author'].iloc[0] == author)
                 
-                used_authors.add(author)
+                if author_count >= 2:
+                    add_book = False
+                
+                # Jika author sama dengan input, batasi hanya 1
+                if author == input_author and author_count >= 1:
+                    add_book = False
             
-            final_recommendations.append(idx)
-        
-        # Jika masih kurang dari 5, tambahkan sisanya
-        for idx, dist in sorted_pairs:
-            if len(final_recommendations) >= 5:
-                break
-            if idx not in final_recommendations:
+            if add_book:
                 final_recommendations.append(idx)
         
-        # Get the list of recommended book titles
-        books_list = [book_pivot.index[idx] for idx in final_recommendations[:5]]
+        # Jika masih kurang dari 5, tambahkan sisanya tanpa filter author
+        if len(final_recommendations) < 5:
+            for idx in candidate_list:
+                if len(final_recommendations) >= 5:
+                    break
+                if idx not in final_recommendations:
+                    book_title = book_pivot.index[idx]
+                    if book_title != book_name:
+                        final_recommendations.append(idx)
         
-        # Fetch poster URLs for the recommended books
+        # FIXED: Shuffle final recommendations untuk variasi
+        random.shuffle(final_recommendations)
+        
+        # Get book titles dan posters
+        books_list = [book_pivot.index[idx] for idx in final_recommendations[:5]]
         poster_url = fetch_poster(final_recommendations[:5])
         
         return books_list, poster_url
@@ -147,57 +175,50 @@ def recommend_book(book_name, diversity_factor=0.3):
         st.error(f"Error in recommendation: {str(e)}")
         return [], []
 
-# Streamlit app setup
+# SIMPLIFIED UI
 st.title("📚 Book Recommendation System")
-st.write("Find similar books based on what you like!")
+st.markdown("---")
 
-# FIX 6: Filter book titles yang ada di pivot table
-available_books = book_pivot.index.tolist()
-book_titles = sorted(available_books)
-
-# User input for book selection
-selected_books = st.selectbox(
-    "Type or select a book from the dropdown", 
-    book_titles,
-    help="Select a book to get personalized recommendations"
+# Book selection
+available_books = sorted(book_pivot.index.tolist())
+selected_book = st.selectbox(
+    "Choose a book you like:",
+    available_books,
+    index=0
 )
 
-# FIX 7: Tambahkan informasi tentang buku yang dipilih
-if selected_books:
-    book_info = df_with_cnt[df_with_cnt['Book-Title'] == selected_books].iloc[0]
-    st.write(f"**Selected Book:** {selected_books}")
-    if 'Book-Author' in book_info:
-        st.write(f"**Author:** {book_info['Book-Author']}")
-
-# FIX 8: Tambahkan loading state dan error handling
-if st.button('Show Recommendation'):
-    with st.spinner('Finding similar books...'):
-        recommended_books, poster_url = recommend_book(selected_books)
+# Show recommendation button
+if st.button("Get Recommendations", type="primary"):
+    with st.spinner("Finding similar books..."):
+        recommended_books, poster_urls = recommend_book(selected_book)
         
         if recommended_books:
-            st.success(f"Found {len(recommended_books)} recommendations!")
+            st.success("Here are your recommendations:")
             
-            # Display recommendations
+            # Display in columns
             cols = st.columns(5)
-            for i, (book, url) in enumerate(zip(recommended_books, poster_url)):
+            for i, (book, url) in enumerate(zip(recommended_books, poster_urls)):
                 with cols[i]:
-                    st.text(book[:50] + "..." if len(book) > 50 else book)  # Truncate long titles
                     st.image(url, use_column_width=True)
+                    # Truncate long titles
+                    display_title = book if len(book) <= 40 else book[:37] + "..."
+                    st.markdown(f"**{display_title}**")
                     
-                    # Tambahkan info tambahan jika ada
-                    book_details = df_with_cnt[df_with_cnt['Book-Title'] == book]
-                    if not book_details.empty and 'Book-Author' in book_details.columns:
-                        st.caption(f"by {book_details['Book-Author'].iloc[0]}")
+                    # Show author if available
+                    book_info = df_with_cnt[df_with_cnt['Book-Title'] == book]
+                    if not book_info.empty and 'Book-Author' in book_info.columns:
+                        author = book_info['Book-Author'].iloc[0]
+                        st.caption(f"by {author}")
         else:
-            st.error("Sorry, couldn't find recommendations for this book. Please try another one.")
+            st.error("No recommendations found. Try another book!")
 
-# FIX 9: Tambahkan statistik dataset
-with st.expander("Dataset Information"):
-    st.write(f"Total books in recommendation system: {len(book_pivot)}")
-    st.write(f"Total users: {len(book_pivot.columns)}")
-    st.write(f"Total ratings: {(book_pivot > 0).sum().sum()}")
-    
-    # Show distribution of ratings per book
-    ratings_per_book = (book_pivot > 0).sum(axis=1)
-    st.write(f"Average ratings per book: {ratings_per_book.mean():.1f}")
-    st.write(f"Books with most ratings: {ratings_per_book.max()}")
+# Simple stats
+with st.expander("📊 Dataset Info"):
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Books", len(book_pivot))
+    with col2:
+        st.metric("Total Users", len(book_pivot.columns))
+    with col3:
+        total_ratings = (book_pivot > 0).sum().sum()
+        st.metric("Total Ratings", f"{total_ratings:,}")
