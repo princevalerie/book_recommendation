@@ -91,7 +91,7 @@ num_rating.rename(columns={'Book-Rating':'Cnt_Rating'},inplace=True)
 df_with_cnt=df.merge(num_rating,on='Book-Title')
 df_with_cnt
 
-df_with_cnt=df_with_cnt[df_with_cnt['Cnt_Rating']>60]
+# df_with_cnt=df_with_cnt[df_with_cnt['Cnt_Rating']>60]
 
 df_with_cnt.drop_duplicates(['User-ID','Book-Rating'],inplace=True)
 
