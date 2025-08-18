@@ -180,19 +180,14 @@ if st.button('Show Recommendation'):
     if recommended_books and poster_url:
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
-            st.text(recommended_books[0])
             st.image(poster_url[0])
         with col2:
-            st.text(recommended_books[1])
             st.image(poster_url[1])
         with col3:
-            st.text(recommended_books[2])
             st.image(poster_url[2])
         with col4:
-            st.text(recommended_books[3])
             st.image(poster_url[3])
         with col5:
-            st.text(recommended_books[4])
             st.image(poster_url[4])
     else:
         st.error("No recommendations found. Try another book!")
