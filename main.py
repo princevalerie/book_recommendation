@@ -26,7 +26,7 @@ def create_pivot_table(df):
     
     # Filter buku dengan minimal interaksi
     book_counts = (book_pivot > 0).sum(axis=1)
-    popular_books = book_counts[book_counts >= 3].index  # Lebih rendah untuk lebih banyak pilihan
+    popular_books = book_counts[book_counts >= 3].index
     book_pivot_filtered = book_pivot.loc[popular_books]
     
     return book_pivot_filtered
@@ -37,7 +37,7 @@ book_sparse = csr_matrix(book_pivot.values)
 @st.cache_resource
 def train_model():
     model = NearestNeighbors(
-        n_neighbors=30,  # Lebih banyak neighbors untuk diversitas
+        n_neighbors=30,
         algorithm='brute',
         metric='cosine'
     )
@@ -61,12 +61,11 @@ def fetch_poster(suggestion):
             poster_url.append("https://via.placeholder.com/150x200?text=Error")
     return poster_url
 
-# FIXED: Improved recommendation function dengan randomization dan better diversity
 def recommend_book(book_name):
     try:
         book_indices = np.where(book_pivot.index == book_name)[0]
-            if len(book_indices) == 0:
-            return [], [], []
+        if len(book_indices) == 0:
+            return [], []
         
         book_id = book_indices[0]
         
@@ -80,20 +79,15 @@ def recommend_book(book_name):
         recommended_indices = suggestion[0][1:]
         distances = distance[0][1:]
         
-        # FIXED: Tambahkan randomization dengan weighted sampling
-        # Buat weight berdasarkan similarity (semakin mirip, weight semakin tinggi)
-        # Tapi tambahkan noise untuk randomization
-        weights = 1 / (distances + 1e-8)  # Avoid division by zero
-        
-        # Normalisasi weights dan tambahkan random noise
+        # Tambahkan randomization dengan weighted sampling
+        weights = 1 / (distances + 1e-8)
         weights = weights / weights.sum()
-        noise = np.random.random(len(weights)) * 0.3  # 30% randomization
+        noise = np.random.random(len(weights)) * 0.3
         weights = weights + noise
         weights = weights / weights.sum()
         
-        # FIXED: Sampling dengan replacement=False untuk menghindari duplikasi
+        # Sampling dengan replacement=False
         try:
-            # Pilih 10 kandidat secara random berdasarkan weight
             candidate_count = min(10, len(recommended_indices))
             selected_candidates = np.random.choice(
                 recommended_indices, 
@@ -102,18 +96,15 @@ def recommend_book(book_name):
                 p=weights[:len(recommended_indices)]
             )
         except:
-            # Fallback jika sampling gagal
             selected_candidates = recommended_indices[:10]
         
-        # FIXED: Implementasi diversity berdasarkan author dan genre
+        # Implementasi diversity
         final_recommendations = []
         used_authors = set()
         
-        # Shuffle kandidat untuk randomization
         candidate_list = list(selected_candidates)
         random.shuffle(candidate_list)
         
-        # Dapatkan info buku input
         input_book_info = df_with_cnt[df_with_cnt['Book-Title'] == book_name]
         input_author = None
         if not input_book_info.empty and 'Book-Author' in input_book_info.columns:
@@ -125,18 +116,15 @@ def recommend_book(book_name):
                 
             book_title = book_pivot.index[idx]
             
-            # Skip jika sama dengan input
             if book_title == book_name:
                 continue
             
-            # Cek diversity berdasarkan author
             book_info = df_with_cnt[df_with_cnt['Book-Title'] == book_title]
             add_book = True
             
             if not book_info.empty and 'Book-Author' in book_info.columns:
                 author = book_info['Book-Author'].iloc[0]
                 
-                # Batasi maksimal 2 buku dari author yang sama
                 author_count = sum(1 for rec_idx in final_recommendations 
                                  if not df_with_cnt[df_with_cnt['Book-Title'] == book_pivot.index[rec_idx]].empty
                                  and 'Book-Author' in df_with_cnt.columns
@@ -145,14 +133,13 @@ def recommend_book(book_name):
                 if author_count >= 2:
                     add_book = False
                 
-                # Jika author sama dengan input, batasi hanya 1
                 if author == input_author and author_count >= 1:
                     add_book = False
             
             if add_book:
                 final_recommendations.append(idx)
         
-        # Jika masih kurang dari 5, tambahkan sisanya tanpa filter author
+        # Jika masih kurang dari 5
         if len(final_recommendations) < 5:
             for idx in candidate_list:
                 if len(final_recommendations) >= 5:
@@ -162,7 +149,6 @@ def recommend_book(book_name):
                     if book_title != book_name:
                         final_recommendations.append(idx)
         
-        # FIXED: Shuffle final recommendations untuk variasi
         random.shuffle(final_recommendations)
         
         # Get book titles and posters
