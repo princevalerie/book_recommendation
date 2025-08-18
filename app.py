@@ -8,15 +8,15 @@ from scipy.sparse import csr_matrix
 df_with_cnt = pd.read_csv('df_with_cnt.csv')
 
 # Create the pivot table for the recommendation system
-# book_pivot = df_with_cnt.pivot_table(columns='User-ID', index='Book-Title', values='Book-Rating', aggfunc='mean')
-book_pivot = df_with_cnt.pivot_table(columns='User-ID', index='Book-Title', values='Book-Rating')
+book_pivot = df_with_cnt.pivot_table(columns='User-ID', index='Book-Title', values='Book-Rating', aggfunc='mean')
+# book_pivot = df_with_cnt.pivot_table(columns='User-ID', index='Book-Title', values='Book-Rating')
 book_pivot.fillna(0, inplace=True)
 
 # Convert the pivot table to a sparse matrix
 book_sparse = csr_matrix(book_pivot)
 
 # Train the Nearest Neighbors model
-model = NearestNeighbors()
+model = NearestNeighbors(metric='cosine', algorithm='brute')
 # model = NearestNeighbors(algorithm='brute')
 model.fit(book_sparse)
 
@@ -74,4 +74,5 @@ if st.button('Show Recommendation'):
     with col5:
         st.text(recommended_books[4])
         st.image(poster_url[4])
+
 
