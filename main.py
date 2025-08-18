@@ -46,27 +46,14 @@ def train_model():
 
 model = train_model()
 
-def fetch_poster(suggestion):
-    poster_url = []
-    for book_id in suggestion:
-        try:
-            book_name = book_pivot.index[book_id]
-            url_series = df_with_cnt[df_with_cnt['Book-Title'] == book_name]['Image-URL-L']
-            if not url_series.empty:
-                url = url_series.iloc[0]
-                poster_url.append(url)
-            else:
-                poster_url.append("https://via.placeholder.com/150x200?text=No+Image")
-        except:
-            poster_url.append("https://via.placeholder.com/150x200?text=Error")
-    return poster_url
+# Simplified version - removed poster functionality for cleaner UI
 
 # FIXED: Improved recommendation function dengan randomization dan better diversity
 def recommend_book(book_name):
     try:
         book_indices = np.where(book_pivot.index == book_name)[0]
         if len(book_indices) == 0:
-            return [], []
+            return []
         
         book_id = book_indices[0]
         
@@ -165,11 +152,10 @@ def recommend_book(book_name):
         # FIXED: Shuffle final recommendations untuk variasi
         random.shuffle(final_recommendations)
         
-        # Get book titles dan posters
+        # Get book titles only (no posters for simplified UI)
         books_list = [book_pivot.index[idx] for idx in final_recommendations[:5]]
-        poster_url = fetch_poster(final_recommendations[:5])
         
-        return books_list, poster_url
+        return books_list
         
     except Exception as e:
         st.error(f"Error in recommendation: {str(e)}")
@@ -190,35 +176,27 @@ selected_book = st.selectbox(
 # Show recommendation button
 if st.button("Get Recommendations", type="primary"):
     with st.spinner("Finding similar books..."):
-        recommended_books, poster_urls = recommend_book(selected_book)
+        recommended_books = recommend_book(selected_book)
         
         if recommended_books:
             st.success("Here are your recommendations:")
             
-            # Display in columns
-            cols = st.columns(5)
-            for i, (book, url) in enumerate(zip(recommended_books, poster_urls)):
-                with cols[i]:
-                    st.image(url, use_column_width=True)
-                    # Truncate long titles
-                    display_title = book if len(book) <= 40 else book[:37] + "..."
-                    st.markdown(f"**{display_title}**")
-                    
-                    # Show author if available
-                    book_info = df_with_cnt[df_with_cnt['Book-Title'] == book]
-                    if not book_info.empty and 'Book-Author' in book_info.columns:
-                        author = book_info['Book-Author'].iloc[0]
-                        st.caption(f"by {author}")
+            # Simple list display without images
+            for i, book in enumerate(recommended_books, 1):
+                # Get book info
+                book_info = df_with_cnt[df_with_cnt['Book-Title'] == book]
+                
+                # Create a nice card-like display
+                with st.container():
+                    col1, col2 = st.columns([1, 4])
+                    with col1:
+                        st.markdown(f"**#{i}**")
+                    with col2:
+                        st.markdown(f"**{book}**")
+                        if not book_info.empty and 'Book-Author' in book_info.columns:
+                            author = book_info['Book-Author'].iloc[0]
+                            st.markdown(f"*by {author}*")
+                    st.markdown("---")
         else:
             st.error("No recommendations found. Try another book!")
 
-# Simple stats
-with st.expander("📊 Dataset Info"):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total Books", len(book_pivot))
-    with col2:
-        st.metric("Total Users", len(book_pivot.columns))
-    with col3:
-        total_ratings = (book_pivot > 0).sum().sum()
-        st.metric("Total Ratings", f"{total_ratings:,}")
