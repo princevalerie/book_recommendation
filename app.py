@@ -16,7 +16,8 @@ book_pivot.fillna(0, inplace=True)
 book_sparse = csr_matrix(book_pivot)
 
 # Train the Nearest Neighbors model
-model = NearestNeighbors(algorithm='brute')
+model = NearestNeighbors()
+# model = NearestNeighbors(algorithm='brute')
 model.fit(book_sparse)
 
 # Function to fetch poster URLs for recommendations
@@ -73,3 +74,4 @@ if st.button('Show Recommendation'):
     with col5:
         st.text(recommended_books[4])
         st.image(poster_url[4])
+
