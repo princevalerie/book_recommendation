@@ -46,14 +46,27 @@ def train_model():
 
 model = train_model()
 
-# Simplified version - removed poster functionality for cleaner UI
+def fetch_poster(suggestion):
+    poster_url = []
+    for book_id in suggestion:
+        try:
+            book_name = book_pivot.index[book_id]
+            url_series = df_with_cnt[df_with_cnt['Book-Title'] == book_name]['Image-URL-L']
+            if not url_series.empty:
+                url = url_series.iloc[0]
+                poster_url.append(url)
+            else:
+                poster_url.append("https://via.placeholder.com/150x200?text=No+Image")
+        except:
+            poster_url.append("https://via.placeholder.com/150x200?text=Error")
+    return poster_url
 
 # FIXED: Improved recommendation function dengan randomization dan better diversity
 def recommend_book(book_name):
     try:
         book_indices = np.where(book_pivot.index == book_name)[0]
-        if len(book_indices) == 0:
-            return []
+            if len(book_indices) == 0:
+            return [], [], []
         
         book_id = book_indices[0]
         
@@ -152,51 +165,49 @@ def recommend_book(book_name):
         # FIXED: Shuffle final recommendations untuk variasi
         random.shuffle(final_recommendations)
         
-        # Get book titles only (no posters for simplified UI)
+        # Get book titles and posters
         books_list = [book_pivot.index[idx] for idx in final_recommendations[:5]]
+        poster_url = fetch_poster(final_recommendations[:5])
         
-        return books_list
+        return books_list, poster_url
         
     except Exception as e:
         st.error(f"Error in recommendation: {str(e)}")
         return [], []
 
-# SIMPLIFIED UI
+# Simple UI
 st.title("📚 Book Recommendation System")
-st.markdown("---")
+st.markdown("Find similar books based on what you like!")
 
 # Book selection
 available_books = sorted(book_pivot.index.tolist())
 selected_book = st.selectbox(
-    "Choose a book you like:",
+    "Type or select a book from the dropdown",
     available_books,
     index=0
 )
 
-# Show recommendation button
-if st.button("Get Recommendations", type="primary"):
-    with st.spinner("Finding similar books..."):
-        recommended_books = recommend_book(selected_book)
-        
-        if recommended_books:
-            st.success("Here are your recommendations:")
-            
-            # Simple list display without images
-            for i, book in enumerate(recommended_books, 1):
-                # Get book info
-                book_info = df_with_cnt[df_with_cnt['Book-Title'] == book]
-                
-                # Create a nice card-like display
-                with st.container():
-                    col1, col2 = st.columns([1, 4])
-                    with col1:
-                        st.markdown(f"**#{i}**")
-                    with col2:
-                        st.markdown(f"**{book}**")
-                        if not book_info.empty and 'Book-Author' in book_info.columns:
-                            author = book_info['Book-Author'].iloc[0]
-                            st.markdown(f"*by {author}*")
-                    st.markdown("---")
-        else:
-            st.error("No recommendations found. Try another book!")
+# Show recommendation button - Simple version
+if st.button('Show Recommendation'):
+    recommended_books, poster_url = recommend_book(selected_book)
+    
+    if recommended_books and poster_url:
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.text(recommended_books[0])
+            st.image(poster_url[0])
+        with col2:
+            st.text(recommended_books[1])
+            st.image(poster_url[1])
+        with col3:
+            st.text(recommended_books[2])
+            st.image(poster_url[2])
+        with col4:
+            st.text(recommended_books[3])
+            st.image(poster_url[3])
+        with col5:
+            st.text(recommended_books[4])
+            st.image(poster_url[4])
+    else:
+        st.error("No recommendations found. Try another book!")
 
