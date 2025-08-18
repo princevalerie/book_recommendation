@@ -46,8 +46,7 @@ def recommend_book(book_name):
     return books_list, poster_url
 
 # Streamlit app setup
-st.title("Book Recommendation System")
-st.write("Find similar books based on what you like!")
+st.title("Book Recommendation System - Collaborative Filtering")
 
 # List of book titles for the dropdown
 book_titles = df_with_cnt['Book-Title'].drop_duplicates().sort_values().tolist()
@@ -74,6 +73,7 @@ if st.button('Show Recommendation'):
     with col5:
         # st.text(recommended_books[4])
         st.image(poster_url[4])
+
 
 
 
