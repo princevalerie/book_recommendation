@@ -125,7 +125,6 @@ def recommend_book(book_name):
 # Streamlit UI
 # ==========================
 st.title("📚 Book Recommendation System")
-st.markdown("Find similar books based on what you like!")
 
 # Dropdown untuk memilih buku
 available_books = sorted(book_pivot.index.tolist())
