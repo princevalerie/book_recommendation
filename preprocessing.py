@@ -7,7 +7,6 @@ Original file is located at
     https://colab.research.google.com/drive/1zIMZikCK828A9jqiHWv7NCq_mJE9blbG
 """
 
-# prompt: ekstrak/content/drive/MyDrive/intern_file/BX-Book-Ratings.csv
 
 import pandas as pd
 
